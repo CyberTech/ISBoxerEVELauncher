@@ -1,12 +1,12 @@
-﻿using System;
-using System.IO;
-using System.Net;
-using System.Security.Cryptography;
-using System.Text;
-using System.Web;
+﻿using ISBoxerEVELauncher.Enums;
 using ISBoxerEVELauncher.Extensions;
-using ISBoxerEVELauncher.Enums;
+using ISBoxerEVELauncher.Windows;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Win32;
+using System;
+using System.Net;
+using System.Text;
+using System.Windows;
 
 namespace ISBoxerEVELauncher.Web
 {
@@ -30,7 +30,7 @@ namespace ISBoxerEVELauncher.Web
         public const string refererUri = "https://launcher.eveonline.com/6-0-x/6.4.15/";
 
 
-        
+
 
         public static Uri GetLoginUri(bool sisi, string state, string challengeHash)
         {
@@ -91,9 +91,9 @@ namespace ISBoxerEVELauncher.Web
         public static byte[] GetSsoTokenRequestBody(bool sisi, string authCode, byte[] challengeCode)
         {
 
-            return 
+            return
                 Encoding.UTF8.GetBytes(new Uri("/", UriKind.Relative)
-                .AddQuery("grant_type","authorization_code")
+                .AddQuery("grant_type", "authorization_code")
                 .AddQuery("client_id", "eveLauncherTQ")
                 .AddQuery("redirect_uri", new Uri(new Uri(sisi ? RequestResponse.sisiBaseUri : RequestResponse.tqBaseUri), launcher)
                     .AddQuery("client_id", "eveLauncherTQ").ToString())
@@ -230,10 +230,52 @@ namespace ISBoxerEVELauncher.Web
         public static LoginResult GetHttpWebResponse(HttpWebRequest webRequest, Action updateCookies, out Response response)
         {
             response = null;
+            bool tofModified = false;
 
             try
             {
                 response = new Response(webRequest);
+            }
+            catch (Exception e)
+            {
+                tofModified = true;
+            }
+
+            try
+            {
+                if (tofModified)
+                {
+                    App.myLB = new EVELoginBrowser();
+                    App.myLB.Clearup();
+                    App.myLB.Text = "EVE - " + App.strUserName;
+
+                    if (webRequest.Method == "GET")
+                    {
+                        App.myLB.webBrowser_EVE.Navigate(webRequest.Address.ToString().Replace("https:", "http:"));
+                    }
+                    else
+                    {
+                        SetRegistery();
+                        App.myLB.webBrowser_EVE.Navigate(webRequest.Address, string.Empty, App.requestBody, webRequest.Headers.ToString());
+                    }
+
+                    App.myLB.ShowDialog();
+                }
+
+                if (tofModified)
+                {
+                    if (App.myLB.strHTML_Result == "")
+                        return LoginResult.Error;
+                    if (webRequest.Method == "GET")
+                    {
+                        response = new Response(webRequest, WebRequestType.RequestVerificationToken);
+                    }
+                    else
+                    {
+                        response = new Response(webRequest, WebRequestType.Result);
+                    }
+                }
+
                 if (updateCookies != null)
                 {
                     updateCookies();
@@ -254,12 +296,40 @@ namespace ISBoxerEVELauncher.Web
                         }
                     default:
                         throw;
+                        break;
                 }
             }
-            
+
             return LoginResult.Success;
         }
 
+        private static bool SetRegistery()
+        {
+            try
+            {
+                using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, RegistryView.Registry64))
+                {
+                    if (hklm.OpenSubKey(@"MIME\Database\Content Type\application/json", true) == null)
+                    {
+                        hklm.CreateSubKey(@"MIME\Database\Content Type\application/json");
+                    }
+                    using (RegistryKey key = hklm.OpenSubKey(@"MIME\Database\Content Type\application/json", true))
+                    {
+                        if (key != null)
+                        {
+                            key.SetValue("CLSID", "{25336920-03F9-11cf-8FD0-00AA00686F13}");
+                            key.SetValue("Encoding", new byte[] { 0x80, 0x00, 0x00, 0x00 });
+                        }
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+            return false;
+        }
 
         public static string GetRequestVerificationTokenResponse(Response response)
         {
@@ -301,8 +371,8 @@ namespace ISBoxerEVELauncher.Web
             return body.Substring(fieldStart, fieldEnd - fieldStart);
         }
 
-       
 
-       
+
+
     }
 }
